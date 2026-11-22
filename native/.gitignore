@@ -1,0 +1,8 @@
+bin/
+obj/
+publish/
+.wix/
+Frame.wxs
+*.wixpdb
+Integration/bin/
+Integration/obj/
