@@ -19,7 +19,8 @@ function controls() {
   $('fullscreen').disabled=$('video').hidden; $('retry').disabled=busy;
 }
 function resetMetrics() {
-  for(const id of ['resolution','fps','bitrate','rtt','codecStat','encoderStat','encodeStat','limitStat','lossStat','audioStat']) $(id).textContent='—';
+  for(const id of ['resolution','fps','bitrate','rtt','codecStat','encoderStat','encodeStat','limitStat','lossStat','audioStat','sourceFpsStat','hardwareStat','decodeStat','bufferStat']) $(id).textContent='—';
+  $('performanceNotice').hidden=true;$('performanceNotice').textContent='';
   $('guestCount').textContent='0 / '+MAX_GUESTS; samples.clear();
 }
 function setMode(value) {
@@ -103,6 +104,13 @@ function showVideo(s,receiving) {
   $('sound').hidden=!receiving||!s.getAudioTracks().length;$('previewToggle').hidden=receiving;
   v.play().catch(()=>message('Clique no vídeo para iniciar a reprodução.','warn'));controls();
 }
+function setPreviewHidden(hidden) {
+  previewHidden=hidden;$('video').hidden=hidden;$('placeholder').hidden=!hidden;
+  $('previewToggle').textContent=hidden?'Mostrar prévia':'Ocultar prévia';
+  if(hidden){$('placeholderTitle').textContent='Captura ativa. Prévia oculta.';$('placeholderText').textContent='A prévia fica oculta para reduzir trabalho neste PC. Seus amigos continuam recebendo o vídeo.';$('video').pause();}
+  else $('video').play().catch(()=>{});
+  controls();
+}
 async function capture(g,synthetic) {
   if(!window.isSecureContext)throw new Error('Abra o site por HTTPS ou localhost.');
   const q=quality();
@@ -115,6 +123,7 @@ async function capture(g,synthetic) {
   stream=captured;demoSource=synthetic;
   stream.getVideoTracks()[0].addEventListener('ended',()=>{if(g===generation){cleanup();message('A captura terminou e a sala foi encerrada.');}},{once:true});
   await applyCapture();assertCurrent(g);showVideo(stream,false);
+  if(!synthetic)setPreviewHidden(true);
   const surface=stream.getVideoTracks()[0].getSettings().displaySurface;
   $('sourceLabel').textContent=synthetic?'Cena de teste · prévia local':({monitor:'Tela inteira',window:'Aplicativo / janela',browser:'Aba do Chrome'}[surface]||'Captura selecionada')+' · prévia local';
   $('audioStat').textContent=stream.getAudioTracks().length?'Sim':synthetic?'Cena de teste sem áudio':'Não disponibilizado pelo Chrome';
@@ -167,6 +176,12 @@ function attachCall(entry,g) {
   // Inbound PeerJS calls create their RTCPeerConnection only after answer().
   const setup=()=>{
     const rtc=call.peerConnection;if(!rtc)return;
+    if(mode==='viewer'){
+      // A latency preference, not a promise: the browser retains its network minimum.
+      const lowDelay=receiver=>{try{if('jitterBufferTarget' in receiver)receiver.jitterBufferTarget=0;}catch{}};
+      rtc.getReceivers().forEach(lowDelay);
+      rtc.addEventListener('track',event=>lowDelay(event.receiver));
+    }
     const changed=()=>{
       if(g!==generation)return;
       if(rtc.connectionState==='connected'){
@@ -208,6 +223,7 @@ async function joinRoom(target) {
 }
 async function applyCapture() {
   if(!stream)return;const q=quality();
+  stream.getVideoTracks()[0].contentHint=$('priority').value==='maintain-resolution'?'detail':'motion';
   if(!demoSource)await stream.getVideoTracks()[0].applyConstraints({width:{max:Math.round(q.height*16/9)},height:{max:q.height},frameRate:{ideal:q.fps,max:q.fps}});
 }
 async function tuneConnection(pc) {
@@ -232,6 +248,22 @@ async function collectStats() {
       const dt=prev&&prev.id===video.id?(video.timestamp-prev.time)/1000:0;
       if(dt>0){totalRate+=Math.max(0,bytes-prev.bytes)*8/dt/1e6;rateKnown=true;}
       if(!shown){
+        const source=reports.get(video.mediaSourceId);
+        const currentFps=video.framesPerSecond??(dt>0?Math.max(0,(frames-prev.frames)/dt):undefined);
+        const sourceFps=source?.framesPerSecond;
+        $('sourceFpsStat').textContent=mode==='viewer'?'Disponível no transmissor':sourceFps!=null?Math.round(sourceFps)+' FPS':'Não informado';
+        const kind=FrameHelpers.encoderKind(video.encoderImplementation,video.powerEfficientEncoder);
+        $('hardwareStat').textContent=mode==='viewer'?'Disponível no transmissor':({software:'Software identificado',hardware:'Encoder eficiente informado pelo Chrome',unknown:'Não confirmado pelo navegador'}[kind]);
+        if(mode==='host'){
+          const notice=FrameHelpers.performanceNotice({encoder:video.encoderImplementation,efficient:video.powerEfficientEncoder,reason:video.qualityLimitationReason,sourceFps,fps:currentFps,target:quality().fps});
+          if($('performanceNotice').textContent!==notice)$('performanceNotice').textContent=notice;
+          $('performanceNotice').hidden=!notice;
+        }
+        if(mode==='viewer'&&dt>0){
+          if(video.totalDecodeTime!=null&&frames>prev.frames)$('decodeStat').textContent=((video.totalDecodeTime-prev.decode)*1000/(frames-prev.frames)).toFixed(1)+' ms / quadro';
+          const emitted=video.jitterBufferEmittedCount-prev.emitted;
+          if(video.jitterBufferDelay!=null&&emitted>0)$('bufferStat').textContent=((video.jitterBufferDelay-prev.buffer)*1000/emitted).toFixed(1)+' ms';
+        }
         shown=true;if(video.frameWidth&&video.frameHeight)$('resolution').textContent=video.frameWidth+' × '+video.frameHeight;
         if(dt>0)$('fps').textContent=Math.round(video.framesPerSecond??Math.max(0,(frames-prev.frames)/dt))+' FPS';
         $('rtt').textContent=pair?.currentRoundTripTime!=null?Math.round(pair.currentRoundTripTime*1000)+' ms':'—';
@@ -242,7 +274,7 @@ async function collectStats() {
         let loss=video.packetsLost;if(mode==='host')reports.forEach(r=>{if(r.type==='remote-inbound-rtp'&&r.kind==='video')loss=r.packetsLost;});
         $('lossStat').textContent=loss!=null?String(Math.max(0,loss)):'Aguardando relatório';
       }
-      samples.set(id,{id:video.id,time:video.timestamp,bytes,frames,encode:video.totalEncodeTime||0});
+      samples.set(id,{id:video.id,time:video.timestamp,bytes,frames,encode:video.totalEncodeTime||0,decode:video.totalDecodeTime||0,buffer:video.jitterBufferDelay||0,emitted:video.jitterBufferEmittedCount||0});
     }
     if(rateKnown)$('bitrate').textContent=totalRate.toFixed(1)+' Mbps';
   }catch{}finally{statsBusy=false;}
@@ -255,7 +287,7 @@ $('join').onclick=()=>{try{joinRoom(FrameHelpers.invitation($('roomInput').value
 $('retry').onclick=()=>{if(invite)joinRoom(invite);};
 $('copyLink').onclick=async()=>{try{await navigator.clipboard.writeText($('inviteLink').value);message('Link copiado. Envie aos seus amigos; eles entram automaticamente.');}catch{$('inviteLink').focus();$('inviteLink').select();message('Pressione Ctrl+C para copiar o link selecionado.','warn');}};
 $('apply').onclick=async()=>{try{await applyCapture();await Promise.all([...clients.values()].map(e=>e.call?.peerConnection?tuneConnection(e.call.peerConnection):Promise.resolve()));message('Qualidade aplicada às conexões atuais.');}catch{message('Não foi possível aplicar todos os ajustes. Tente novamente ou reinicie a captura.','warn');}};
-$('previewToggle').onclick=()=>{previewHidden=!previewHidden;$('video').hidden=previewHidden;$('placeholder').hidden=!previewHidden;$('previewToggle').textContent=previewHidden?'Mostrar prévia':'Ocultar prévia';$('placeholderTitle').textContent='Sua transmissão continua.';$('placeholderText').textContent='Prévia oculta neste PC. Seus amigos continuam recebendo o vídeo.';if(previewHidden)$('video').pause();else $('video').play().catch(()=>{});controls();};
+$('previewToggle').onclick=()=>setPreviewHidden(!previewHidden);
 $('sound').onclick=async()=>{const v=$('video');v.muted=!v.muted;try{await v.play();$('sound').textContent=v.muted?'Ativar áudio':'Silenciar';}catch{message('Clique no vídeo para iniciar a reprodução.','warn');}};
 $('video').onclick=()=>{$('video').play().catch(()=>{});};
 $('fullscreen').onclick=()=>{$('screen').requestFullscreen().catch(()=>message('Tela cheia indisponível neste contexto.','warn'));};

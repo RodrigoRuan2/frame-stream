@@ -31,6 +31,20 @@ const FrameHelpers = (() => {
       return rows.join('\r\n');
     }).join('');
   }
-  return {invitation, preferCodec};
+  function encoderKind(name, efficient) {
+    // Positive identification only. Missing stats must never imply GPU usage.
+    if (/openh264|libvpx|libaom|svt[-_]?av1/i.test(name || '')) return 'software';
+    if (efficient === true) return 'hardware';
+    return 'unknown';
+  }
+  function performanceNotice({encoder,efficient,reason,sourceFps,fps,target}) {
+    const software=encoderKind(encoder,efficient)==='software';
+    if(reason==='cpu')return 'O Chrome está limitando o vídeo por processamento'+(software?' e usando codificação por software':'')+'. Verifique a aceleração gráfica em Configurações → Sistema do Chrome e reinicie o navegador para aplicar. Se persistir, teste 720p. Trocar a hospedagem não resolve este gargalo.';
+    if(software)return 'Codificação por software detectada ('+encoder+'). A placa de vídeo não está fazendo esta codificação. Verifique a aceleração gráfica em Configurações → Sistema do Chrome; o formato selecionado não garante uso da GPU.';
+    if(reason==='bandwidth')return 'O Chrome está adaptando o vídeo à conexão. Teste menos espectadores ou uma resolução menor. O limite de Mbps é um teto, não uma taxa garantida.';
+    if(Number.isFinite(sourceFps)&&sourceFps<target*.65&&Number.isFinite(fps)&&fps<target*.65)return 'A origem está fornecendo poucos quadros. Se o jogo está em movimento, compare captura de janela com tela inteira. Conteúdo parado pode gerar poucos quadros normalmente.';
+    return '';
+  }
+  return {invitation, preferCodec, encoderKind, performanceNotice};
 })();
 if (typeof module !== 'undefined') module.exports = FrameHelpers;

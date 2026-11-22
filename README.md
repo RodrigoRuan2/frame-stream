@@ -24,6 +24,16 @@ Transmissão de tela ou janela de aplicativo pelo Chrome, com salas acessíveis 
 - O seletor do Chrome tem a decisão final sobre a origem e o áudio disponíveis. Jogos em modo exclusivo podem precisar de modo janela sem bordas.
 - O painel soma o bitrate de todas as conexões de vídeo; resolução, FPS e RTT são de uma conexão. RTT não representa o atraso ponta a ponta.
 
+## Diagnóstico de FPS baixos
+
+O padrão prioriza movimento e permite ao WebRTC reduzir resolução em vez de preservar 1080p sacrificando os FPS. A opção **Priorizar nitidez** mantém a alternativa anterior. A prévia da captura real começa oculta para reduzir o trabalho local, e pode ser reativada sem interromper a transmissão.
+
+O painel separa FPS da origem, FPS codificados/decodificados, encoder, limitação de CPU/rede, tempo de codificação, tempo de decodificação e buffer no receptor. Valores ausentes não são interpretados como aceleração por GPU. O alerta de OpenH264 identifica software; a página não pode ler ou alterar a configuração de aceleração gráfica do Chrome.
+
+O receptor solicita o menor buffer de reprodução quando `jitterBufferTarget` está disponível. É uma preferência de baixa latência; o navegador mantém os limites necessários à rede, e isso não resolve captura ou codificação lentas.
+
+Se aparecer OpenH264 com limitação de processamento, verifique **Configurações → Sistema → Usar aceleração gráfica quando disponível** no Chrome e reinicie o navegador para aplicar. Compare o encoder e os FPS durante o mesmo jogo, com um espectador. Habilitar a configuração permite tentar aceleração, mas não garante que todo codec use hardware ou que o jogo mantenha 60 FPS.
+
 ## Desenvolvimento
 
 Sirva esta pasta por localhost ou HTTPS, por exemplo `python -m http.server 8767 --bind 127.0.0.1`.
