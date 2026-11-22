@@ -1,4 +1,4 @@
-# Frame para Windows — 0.1.0
+# Frame para Windows — 0.2.0
 
 Transmissor nativo .NET/WinForms, Windows Graphics Capture e NVIDIA NVENC. O espectador abre `watch.html` no Chrome, sem instalar nada. A versão web original continua disponível.
 
@@ -40,3 +40,24 @@ PeerServer Cloud (`0.peerjs.com`) faz sinalização por WSS; Google STUN auxilia
 `Integration` é um executável de teste com encerramento automático. Por padrão transmite um padrão sintético; `--window HWND --audio` testa captura de uma janela e áudio da saída padrão. Não é instalado no usuário. A chave de convite de teste fica apenas no diretório temporário de saída.
 
 O código do aplicativo está disponível para inspeção e alterações. Dependências mantêm suas próprias licenças, incluídas no pacote.
+
+## Atualização 0.2.0
+
+- Captura com margem de até 120 FPS para saída cadenciada em 60 FPS, mantendo as texturas na GPU. Quadros podem ser repetidos se a origem não entregar imagens novas.
+- NVENC VBR com o mesmo teto de bitrate escolhido, para evitar gastar banda desnecessária em cenas simples.
+- Captura WASAPI por evento, com envio de um pacote Opus a cada 20 ms, inclusive durante silêncio. Depois de uma pausa de processamento, o relógio avança e o áudio antigo é descartado.
+- Opus nativo x64 incluído no instalador; usa o encoder gerenciado se o Windows não conseguir carregar a biblioteca nativa. O carregamento usa o caminho do aplicativo; não depende da pasta do atalho.
+- Relatórios RTCP associam os timestamps RTP ao relógio estável da mídia, inclusive na passagem pelo limite de 32 bits.
+- A lista de espectadores conectados é atualizada nas mudanças de conexão; não é recriada para cada pacote de vídeo.
+- Diagnóstico do receptor inclui perdas por intervalo, jitter, congelamentos, buffer de áudio e resumo de um minuto. O botão Copiar diagnóstico não inclui a chave do convite.
+
+Testes de temporização e de codec: `dotnet run --project Integration -c Release -r win-x64 -- --verify`.
+O teste integrado aceita `--720` e `--audio`, além de `--window HWND`. As medidas locais não substituem um teste entre duas redes.
+
+### Validação e limitação conhecida
+
+Na RTX 4060 Ti, captura da janela do jogo em 720p com áudio manteve aproximadamente 59,5–60,5 FPS codificados nas amostras de cinco segundos durante cerca de dois minutos. Isso não mede imagens únicas. A recepção no Chrome do mesmo PC continuou oscilando: houve uma amostra com 61 FPS recebidos e 21 FPS decodificados, com buffer acima de um segundo. A eliminação do atraso e 60 FPS de ponta a ponta ainda não estão comprovados. É necessário repetir em outro PC/rede, consultando o diagnóstico.
+
+O benchmark aquecido de 1.500 quadros Opus usou 62,5 ms de CPU nativo contra 250 ms gerenciado nesta máquina. Esse resultado é do codec de áudio isolado; não representa redução de 75% no consumo total do transmissor. Não há comparação controlada do consumo total com o instalador 0.1.0.
+
+`node tests/watch-stats.test.cjs` (a partir da raiz do site) valida as métricas por intervalo e o controle de reconexão. O botão Voltar ao vivo refaz a conexão quando solicitado e não substitui a solução de sobrecarga ou falta de banda.

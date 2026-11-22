@@ -4,7 +4,7 @@ root=Path(__file__).resolve().parent
 packages=root.parent/'native-tools/packages'
 licenses=root/'publish/licenses';licenses.mkdir(exist_ok=True)
 assets=json.loads((root/'obj/project.assets.json').read_text(encoding='utf-8-sig'))
-text=['FRAME 0.1.0 — COMPONENTES E LICENÇAS','',
+text=['FRAME 0.2.0 — COMPONENTES E LICENÇAS','',
 'Aplicativo: https://github.com/RodrigoRuan2/frame-stream/tree/main/native',
 'FFmpeg LGPL shared: N-129219-g359c825152-20261122',
 'Distribuição: https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases',
@@ -39,7 +39,7 @@ for key,item in assets['libraries'].items():
             shutil.copy2(candidate,licenses/(key.replace('/','-')+'-'+candidate.name))
     text.append('')
 shutil.copy2(root.parent/'native-tools/ffmpeg/ffmpeg-master-latest-win64-lgpl-shared/LICENSE.txt',licenses/'FFmpeg-LGPL-3.txt')
-for name,url in [('GPL-3.0.txt','https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.GPLv3'),('NAudio-LICENSE.txt','https://raw.githubusercontent.com/naudio/NAudio/master/license.txt'),('dotnet-LICENSE.txt','https://raw.githubusercontent.com/dotnet/runtime/v8.0.21/LICENSE.TXT'),('dotnet-THIRD-PARTY-NOTICES.txt','https://raw.githubusercontent.com/dotnet/runtime/v8.0.21/THIRD-PARTY-NOTICES.TXT')]:
+for name,url in [('GPL-3.0.txt','https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.GPLv3'),('NAudio-LICENSE.txt','https://raw.githubusercontent.com/naudio/NAudio/master/license.txt'),('dotnet-LICENSE.txt','https://raw.githubusercontent.com/dotnet/runtime/v8.0.34/LICENSE.TXT'),('dotnet-THIRD-PARTY-NOTICES.txt','https://raw.githubusercontent.com/dotnet/runtime/v8.0.34/THIRD-PARTY-NOTICES.TXT')]:
     try:urllib.request.urlretrieve(url,licenses/name)
     except Exception as e:print('Notice download:',name,str(e))
 notice='\n'.join(text)

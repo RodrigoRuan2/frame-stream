@@ -10,6 +10,7 @@ public sealed class VideoEncoder : IDisposable
     public event Action<string>? Failed;
     public long Frames, Bytes;
     public double Fps;
+    public TimeSpan CpuTime { get { try{return process?.TotalProcessorTime??TimeSpan.Zero;}catch{return TimeSpan.Zero;} } }
     public string LastError => string.Join(Environment.NewLine, errors);
     readonly ConcurrentQueue<string> errors = new();
     readonly CancellationTokenSource stop = new();
@@ -30,9 +31,9 @@ public sealed class VideoEncoder : IDisposable
         void Add(params string[] args) { foreach(var a in args) start.ArgumentList.Add(a); }
         Add("-hide_banner","-nostdin","-loglevel","warning","-stats_period","1","-progress","pipe:1");
         if (source.Synthetic) Add("-re","-f","lavfi","-i",$"testsrc2=size={height*16/9}x{height}:rate={fps}","-vf","format=nv12");
-        else Add("-filter_complex",$"gfxcapture={source.Filter}:max_framerate={fps}:width={height*16/9}:height={height}:resize_mode=scale_aspect:display_border=1:dup_frames=1");
+        else Add("-filter_complex",$"gfxcapture={source.Filter}:max_framerate={fps*2}:width={height*16/9}:height={height}:resize_mode=scale_aspect:display_border=1:dup_frames=1,fps=fps={fps}:round=near");
         Add("-an","-c:v","h264_nvenc","-preset","p3","-tune","ull","-profile:v","baseline","-level:v","4.2",
-            "-rc","cbr","-b:v",$"{mbps}M","-maxrate",$"{mbps}M","-bufsize",$"{mbps*200}k",
+            "-rc","vbr","-b:v",$"{mbps}M","-maxrate",$"{mbps}M","-bufsize",$"{mbps*200}k",
             "-rc-lookahead","0","-bf","0","-g",fps.ToString(),"-zerolatency","1","-forced-idr","1",
             "-fps_mode","passthrough","-flush_packets","1","-f","rtp","-payload_type","96",$"rtp://127.0.0.1:{port}?pkt_size=1150");
         process = new Process { StartInfo=start, EnableRaisingEvents=true };

@@ -15,7 +15,15 @@ public sealed class Room : IDisposable
     readonly string key=Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
     readonly string signalToken=Guid.NewGuid().ToString("N");
     public string Invite => $"https://rodrigoruan2.github.io/frame-stream/watch.html#room={Id}&key={key}";
-    public int Count => guests.Values.Count(g=>g.Pc.connectionState==RTCPeerConnectionState.connected);
+    public int Count => connected.Length;
+    volatile Guest[] connected=[];
+    readonly MediaClock videoClock=new(90000),audioClock=new(48000);
+    uint lastVideoTimestamp;bool videoClockStarted;
+    void RefreshConnected()=>connected=guests.Values.Where(g=>g.Pc.connectionState==RTCPeerConnectionState.connected).ToArray();
+    void ConfigureReports(RTCPeerConnection pc,RTCPSession session,MediaClock clock) {
+        session.OnReportReadyToSend-=pc.SendRtcpReport;
+        session.OnReportReadyToSend+=(type,report)=>{clock.Correct(report);pc.SendRtcpReport(type,report);};
+    }
     public bool Audio {get;}
     readonly ConcurrentDictionary<string,Guest> guests=new();
     readonly CancellationTokenSource stop=new();
@@ -78,17 +86,20 @@ public sealed class Room : IDisposable
         if(!p.TryGetProperty("connectionId",out var c))return; var cid=c.GetString()??"";
         if(type=="OFFER") {
             if(guests.ContainsKey(src))return;
-            if(guests.Count>=4) {await Send(new {type="ANSWER",dst=src,payload=new {connectionId=cid,key,error="A sala está cheia (4 espectadores)."}});return;}
+            if(guests.Count>=4) {await Send(new {type="ANSWER",dst=src,payload=new {type="media",connectionId=cid,key,error="A sala está cheia (4 espectadores)."}});return;}
             RTCPeerConnection? pc=null;
             try {
                 var config=new RTCConfiguration {iceServers=new List<RTCIceServer>{new(){urls="stun:stun.l.google.com:19302"}}};
                 pc=new RTCPeerConnection(config);var guest=new Guest(pc,cid);guests[src]=guest;
                 pc.addTrack(new MediaStreamTrack(new VideoFormat(VideoCodecsEnum.H264,96,90000,"packetization-mode=1;profile-level-id=42e02a;level-asymmetry-allowed=1"),MediaStreamStatusEnum.SendOnly));
                 if(Audio)pc.addTrack(new MediaStreamTrack(new AudioFormat(AudioCodecsEnum.OPUS,111,48000,2,"minptime=10;useinbandfec=1;stereo=1"),MediaStreamStatusEnum.SendOnly));
+                ConfigureReports(pc,pc.VideoRtcpSession,videoClock);
+                if(Audio)ConfigureReports(pc,pc.AudioRtcpSession,audioClock);
                 pc.OnVideoFormatsNegotiated += formats=>guest.VideoPt=formats[0].FormatID;
                 pc.OnAudioFormatsNegotiated += formats=>guest.AudioPt=formats[0].FormatID;
                 pc.onicecandidate += candidate=>{if(candidate!=null)SendSoon(new {type="CANDIDATE",dst=src,payload=new {type="media",connectionId=cid,key,candidate=JsonSerializer.Deserialize<JsonElement>(candidate.toJSON())}});};
                 pc.onconnectionstatechange += state=>{
+                    RefreshConnected();
                     Diagnostic?.Invoke("Conexão de espectador: "+state);
                     if(state is RTCPeerConnectionState.failed or RTCPeerConnectionState.closed)Remove(src);
                     Status?.Invoke(Count>0?$"Transmitindo · {Count} espectador(es)":"Sala aberta · aguardando amigos");
@@ -99,22 +110,24 @@ public sealed class Room : IDisposable
                 var answer=pc.createAnswer(); await pc.setLocalDescription(answer);
                 await Send(new {type="ANSWER",dst=src,payload=new {type="media",connectionId=cid,key,sdp=new{type="answer",sdp=answer.sdp},audio=Audio}});
                 Diagnostic?.Invoke("Resposta de vídeo enviada.");
-            } catch(Exception e) {Remove(src); pc?.Close("Falha de negociação"); Diagnostic?.Invoke(e.Message);await Send(new {type="ANSWER",dst=src,payload=new {connectionId=cid,key,error="Falha ao conectar vídeo. Tente novamente."}});}
+            } catch(Exception e) {Remove(src); pc?.Close("Falha de negociação"); Diagnostic?.Invoke(e.Message);await Send(new {type="ANSWER",dst=src,payload=new {type="media",connectionId=cid,key,error="Falha ao conectar vídeo. Tente novamente."}});}
         } else if(guests.TryGetValue(src,out var g)&&g.ConnectionId==cid) {
             if(type=="CANDIDATE"&&p.TryGetProperty("candidate",out var ice)) {
                 try {g.Pc.addIceCandidate(new RTCIceCandidateInit {candidate=ice.GetProperty("candidate").GetString(),sdpMid=ice.TryGetProperty("sdpMid",out var mid)?mid.GetString():null,sdpMLineIndex=ice.TryGetProperty("sdpMLineIndex",out var line)?line.GetUInt16():(ushort)0});}catch(Exception e){Diagnostic?.Invoke(e.Message);}
             }else if(type=="LEAVE")Remove(src);
         }
     }
-    void Remove(string id) { if(guests.TryRemove(id,out var g))g.Pc.Close("Espectador saiu"); }
+    void Remove(string id) { if(guests.TryRemove(id,out var g)){RefreshConnected();g.Pc.Close("Espectador saiu");} }
     public void SendVideo(byte[] payload,uint timestamp,int marker)
     {
-        foreach(var g in guests.Values)if(g.Pc.connectionState==RTCPeerConnectionState.connected)
+        if(!videoClockStarted||timestamp!=lastVideoTimestamp){videoClock.Observe(timestamp,MediaClock.Now());lastVideoTimestamp=timestamp;videoClockStarted=true;}
+        foreach(var g in connected)
             try {g.Pc.SendRtpRaw(SDPMediaTypesEnum.video,payload,timestamp,marker,g.VideoPt);}catch{}
     }
     public void SendAudio(byte[] payload,uint timestamp)
     {
-        foreach(var g in guests.Values)if(g.Pc.connectionState==RTCPeerConnectionState.connected)
+        audioClock.Observe(timestamp,MediaClock.Now());
+        foreach(var g in connected)
             try {g.Pc.SendRtpRaw(SDPMediaTypesEnum.audio,payload,timestamp,0,g.AudioPt);}catch{}
     }
     public void Dispose()

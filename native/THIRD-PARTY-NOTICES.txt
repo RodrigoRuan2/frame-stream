@@ -1,4 +1,4 @@
-FRAME 0.1.0 — COMPONENTES E LICENÇAS
+FRAME 0.2.0 — COMPONENTES E LICENÇAS
 
 Aplicativo: https://github.com/RodrigoRuan2/frame-stream/tree/main/native
 FFmpeg LGPL shared: N-129219-g359c825152-20261122
@@ -29,6 +29,18 @@ Projeto: http://net-commons.github.io/common-logging/
 Licença: Consulte a distribuição original.
 
 Concentus/2.2.2
+Autores: Logan Stromberg
+Copyright: © Xiph.Org Foundation, Skype Limited, CSIRO, Microsoft Corp.
+Projeto: https://github.com/lostromb/concentus
+Licença: LICENSE
+
+Concentus.Native/1.5.2
+Autores: Logan Stromberg
+Copyright: © Xiph.Org Foundation, Skype Limited, CSIRO, Microsoft Corp.
+Projeto: https://github.com/lostromb/concentus
+Licença: LICENSE
+
+Concentus.Native.NetCore/1.5.2
 Autores: Logan Stromberg
 Copyright: © Xiph.Org Foundation, Skype Limited, CSIRO, Microsoft Corp.
 Projeto: https://github.com/lostromb/concentus

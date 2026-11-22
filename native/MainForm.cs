@@ -20,10 +20,11 @@ public sealed class MainForm : Form
     readonly System.Windows.Forms.Timer timer=new(){Interval=1000};
     Room? room;VideoEncoder? video;AudioCapture? sound;
     bool busy, closing;
-    long lastFrames,lastBytes;DateTime lastSample;
+    long lastFrames,lastBytes;DateTime lastSample;TimeSpan lastCpu;
+    readonly Process ownProcess=Process.GetCurrentProcess();
     public MainForm()
     {
-        Text="Frame · Transmitir para amigos";ClientSize=new Size(740,690);MinimumSize=new Size(650,700);
+        Text="Frame 0.2 · Transmitir para amigos";ClientSize=new Size(740,690);MinimumSize=new Size(650,700);
         StartPosition=FormStartPosition.CenterScreen;Font=new Font("Segoe UI",10F);BackColor=Color.FromArgb(17,23,26);ForeColor=Color.FromArgb(235,241,239);
         var root=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(28),ColumnCount=1,RowCount=15};
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
@@ -34,7 +35,7 @@ public sealed class MainForm : Form
         var sources=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Height=42};sources.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));sources.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));sources.Controls.Add(source,0,0);sources.Controls.Add(refresh,1,0);Row(sources,46);
         quality.Items.AddRange(["1080p","720p · mais leve"]);quality.SelectedIndex=0;
         fps.Items.AddRange(["Até 60 FPS","Até 30 FPS"]);fps.SelectedIndex=0;
-        bitrate.Items.AddRange(["8 Mbps","12 Mbps","16 Mbps","25 Mbps"]);bitrate.SelectedIndex=2;
+        bitrate.Items.AddRange(["8 Mbps","12 Mbps","16 Mbps","25 Mbps"]);bitrate.SelectedIndex=1;
         var settings=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,Height=70};
         for(int i=0;i<3;i++)settings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.33F));
         settings.Controls.Add(new Label{Text="Resolução",AutoSize=true},0,0);settings.Controls.Add(new Label{Text="Fluidez",AutoSize=true},1,0);settings.Controls.Add(new Label{Text="Vídeo por amigo",AutoSize=true},2,0);
@@ -71,10 +72,10 @@ public sealed class MainForm : Form
             room=new Room(sound!=null);room.Status+=s=>UI(()=>status.Text=s);room.Diagnostic+=Log;
             video=new VideoEncoder();video.Packet+=room.SendVideo;
             var thisVideo=video;video.Failed+=e=>UI(()=>{if(video==thisVideo&&!busy){Log(e);StopRoom();status.Text="Captura interrompida. Selecione a origem e tente novamente.";}});
-            if(sound!=null){sound.Packet+=room.SendAudio;sound.Start();}
+            if(sound!=null){sound.Packet+=room.SendAudio;sound.Start();Log("Áudio: "+sound.EncoderName+" · envio a cada 20 ms");}
             await video.Start(selected,height,frames,rate);
             status.Text="Conectando serviço de salas…";await room.Start();
-            invite.Text=room.Invite;lastFrames=video.Frames;lastBytes=video.Bytes;lastSample=DateTime.UtcNow;timer.Start();
+            invite.Text=room.Invite;lastFrames=video.Frames;lastBytes=video.Bytes;lastSample=DateTime.UtcNow;lastCpu=ownProcess.TotalProcessorTime+video.CpuTime;timer.Start();
             Log("NVIDIA NVENC H.264 · "+height+"p · meta "+frames+" FPS");
             Log(selected.Synthetic?"Fonte sintética. Não mede captura do jogo.":"Windows Graphics Capture → GPU → NVENC. Prévia local desativada.");
             Log("Quem tiver o link pode assistir enquanto a sala estiver aberta. Upload cresce por espectador.");
@@ -86,7 +87,9 @@ public sealed class MainForm : Form
     {
         if(video==null||room==null)return;var now=DateTime.UtcNow;double dt=(now-lastSample).TotalSeconds;
         var f=Interlocked.Read(ref video.Frames);var b=Interlocked.Read(ref video.Bytes);
-        metrics.Text=$"{(f-lastFrames)/dt:F0} FPS codificados · {(b-lastBytes)*8/dt/1e6:F1} Mbps por amigo · {room.Count}/4 conectados";
+        var cpu=ownProcess.TotalProcessorTime+video.CpuTime;
+        metrics.Text=$"{(f-lastFrames)/dt:F0} FPS codificados · {(b-lastBytes)*8/dt/1e6:F1} Mbps por amigo · {room.Count}/4 conectados\nCPU do Frame + captura: {(cpu-lastCpu).TotalSeconds/dt/Environment.ProcessorCount*100:F1}%";
+        lastCpu=cpu;
         lastFrames=f;lastBytes=b;lastSample=now;
     }
     void StopRoom()

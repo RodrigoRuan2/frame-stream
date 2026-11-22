@@ -11,7 +11,7 @@ def tag(name):return '{'+ns+'}'+name
 def sub(parent,name,**attrs):return E.SubElement(parent,tag(name),attrs)
 def ident(path):return 'f'+hashlib.sha256(str(path).replace('\\','/').encode()).hexdigest()[:24]
 wix=E.Element(tag('Wix'))
-package=sub(wix,'Package',Name='Frame',Manufacturer='Frame',Version='0.1.0',UpgradeCode='C645113D-692F-4DCA-A2F4-1EC20D17EF43',Scope='perUser',Language='1046',Codepage='1252')
+package=sub(wix,'Package',Name='Frame',Manufacturer='Frame',Version='0.2.0',UpgradeCode='C645113D-692F-4DCA-A2F4-1EC20D17EF43',Scope='perUser',Language='1046',Codepage='1252')
 sub(package,'MajorUpgrade',DowngradeErrorMessage='Já existe uma versão mais recente do Frame instalada.')
 sub(package,'MediaTemplate',EmbedCab='yes',CompressionLevel='high')
 local=sub(package,'StandardDirectory',Id='LocalAppDataFolder')
@@ -33,7 +33,7 @@ for path in sorted(payload.rglob('*')):
     if parent not in cleanup:
         sub(component,'RemoveFolder',Id='r'+ident(parent),On='uninstall');cleanup.add(parent)
     sub(component,'File',Id=fid,Source=str(path))
-    sub(component,'RegistryValue',Root='HKCU',Key=r'Software\Frame\Components',Name=cid,Value='0.1.0',Type='string',KeyPath='yes')
+    sub(component,'RegistryValue',Root='HKCU',Key=r'Software\Frame\Components',Name=cid,Value='0.2.0',Type='string',KeyPath='yes')
     sub(feature,'ComponentRef',Id=cid)
 sub(package,'StandardDirectory',Id='ProgramMenuFolder')
 shortcut=sub(install,'Component',Id='StartMenuShortcut',Guid='*')
@@ -46,7 +46,7 @@ sub(custom,'Publish',Dialog='WelcomeDlg',Control='Next',Event='NewDialog',Value=
 sub(custom,'Publish',Dialog='InstallDirDlg',Control='Back',Event='NewDialog',Value='WelcomeDlg',Order='2',Condition='1')
 sub(package,'Property',Id='ARPCOMMENTS',Value='Transmissor nativo de tela/janela NVIDIA. Seus amigos assistem pelo link.')
 source=root/'Frame.wxs';E.ElementTree(wix).write(source,encoding='utf-8',xml_declaration=True)
-output=root.parent.parent/'outputs'/'Frame-0.1.0-win-x64.msi'
+output=root.parent.parent/'outputs'/'Frame-0.2.0-win-x64.msi'
 output.parent.mkdir(exist_ok=True)
 with (root/'installer-build.log').open('w',encoding='utf-8') as log:
     result=subprocess.run([str(root.parent/'native-tools'/'wix'/'wix.exe'),'build',str(source),'-arch','x64','-ext','WixToolset.UI.wixext','-culture','pt-BR','-o',str(output)],cwd=root,stdout=log,stderr=log)
